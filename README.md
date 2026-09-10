@@ -1,4 +1,4 @@
-# DV-HDI-INDEX
+#ANALYSIS AND VISUALISATION OF HUMAN DEVELOPMENT INDEX 
 ABSTRACT
 The Human Development Index (HDI) Analysis Project presents a comprehensive examination of global human development trends using data obtained from the United Nations Development Programme (UNDP). The dataset incorporates HDI values along with its core components—life expectancy, educational attainment, and Gross National Income (GNI) per capita—enabling a multidimensional assessment of development across countries and regions. The primary objective of this project is to design and implement an interactive data visualization dashboard that provides users with an intuitive platform to explore, compare, and interpret global HDI statistics.
 
