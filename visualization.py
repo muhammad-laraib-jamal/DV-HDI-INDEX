@@ -8,7 +8,7 @@ import plotly.express as px
 # 1. LOAD DATA
 # =========================================================
 
-df = pd.read_csv("HDI_preprocessed.csv")
+df = pd.read_csv("HDI_cleaned.csv")
 
 print("Dataset Shape:", df.shape)
 print(df.head())
