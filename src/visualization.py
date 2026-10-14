@@ -35,6 +35,21 @@ CORRELATION_COLUMNS = [
     "GNI_Per_Capita",
 ]
 
+# Colour-blind-safe palette (Okabe-Ito), used for every chart.
+PALETTE = [
+    "#0072B2",  # blue
+    "#D55E00",  # vermilion
+    "#009E73",  # green
+    "#CC79A7",  # pink
+    "#E69F00",  # orange
+    "#56B4E9",  # sky blue
+    "#6B7280",  # grey
+    "#000000",  # black
+]
+
+AVERAGE_LINE_COLOUR = "#6B7280"
+MAX_LABELLED_POINTS = 12
+
 
 def load_data() -> pd.DataFrame:
     """Read the cleaned HDI dataset."""
@@ -60,7 +75,9 @@ def _apply_white_layout(fig: go.Figure) -> go.Figure:
         paper_bgcolor="white",
         plot_bgcolor="white",
         font={"color": "#1f2933"},
-        margin={"l": 60, "r": 20, "t": 60, "b": 50},
+        title={"font": {"size": 16}},
+        margin={"l": 60, "r": 24, "t": 60, "b": 50},
+        colorway=PALETTE,
     )
     return fig
 
@@ -96,25 +113,89 @@ def _empty_matplotlib_figure(message: str) -> Figure:
     return fig
 
 
-# =========================================================
-# 3. CHART 1 - AVERAGE HDI TREND (PLOTLY, FULL 1990-2023)
-# =========================================================
+def _trend_title(countries, first_year: int, last_year: int) -> str:
+    period = f"{first_year}–{last_year}"
+    if not countries:
+        return f"Average HDI Trend ({period})"
+    if len(countries) <= 3:
+        return f"HDI Trend: {', '.join(countries)} ({period})"
+    return f"HDI Trend: {len(countries)} selected countries ({period})"
 
-def create_hdi_trend(df: pd.DataFrame) -> go.Figure:
+
+# =========================================================
+# 3. CHART 1 - HDI TREND (PLOTLY, FULL 1990-2023)
+# =========================================================
+# No countries selected : average HDI of all countries.
+# Countries selected    : one line per country, plus the
+#                         all-country average as a dashed reference.
+# `year` (optional) draws a dotted marker for the selected year.
+
+def create_hdi_trend(df: pd.DataFrame, countries=None, year=None) -> go.Figure:
+    first_year = int(df["year"].min())
+    last_year = int(df["year"].max())
+
     yearly_hdi = df.groupby("year", as_index=False)["HDI"].mean()
 
-    fig = px.line(
-        yearly_hdi,
-        x="year",
-        y="HDI",
-        markers=True,
-        title="Average HDI Trend (1990–2023)",
-        labels={"year": "Year", "HDI": "Average HDI"},
-    )
+    if countries:
+        data = df[df["country"].isin(countries)].sort_values(["country", "year"])
 
-    fig.update_traces(
-        hovertemplate="Year: %{x}<br>Average HDI: %{y:.3f}<extra></extra>"
-    )
+        if data.empty:
+            return _empty_plotly_figure("No data for the selected countries")
+
+        fig = px.line(
+            data,
+            x="year",
+            y="HDI",
+            color="country",
+            markers=True,
+            title=_trend_title(countries, first_year, last_year),
+            labels={"year": "Year", "HDI": "HDI", "country": "Country"},
+            color_discrete_sequence=PALETTE,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=yearly_hdi["year"],
+                y=yearly_hdi["HDI"],
+                mode="lines",
+                name="All-country average",
+                line={"color": AVERAGE_LINE_COLOUR, "dash": "dash", "width": 2},
+            )
+        )
+
+        fig.update_traces(
+            hovertemplate=(
+                "<b>%{fullData.name}</b><br>"
+                "Year: %{x}<br>HDI: %{y:.3f}<extra></extra>"
+            )
+        )
+
+        fig.update_layout(
+            legend={
+                "orientation": "h",
+                "yanchor": "top", "y": -0.22,
+                "xanchor": "left", "x": 0,
+                "title": {"text": ""},
+            },
+            yaxis_title="Human Development Index",
+        )
+    else:
+        fig = px.line(
+            yearly_hdi,
+            x="year",
+            y="HDI",
+            markers=True,
+            title=_trend_title(None, first_year, last_year),
+            labels={"year": "Year", "HDI": "Average HDI"},
+            color_discrete_sequence=PALETTE,
+        )
+
+        fig.update_traces(
+            hovertemplate="Year: %{x}<br>Average HDI: %{y:.3f}<extra></extra>"
+        )
+
+    if year is not None:
+        fig.add_vline(x=year, line_dash="dot", line_color="#9AA5B1", line_width=1.5)
 
     return _apply_white_layout(fig)
 
@@ -124,54 +205,49 @@ def create_hdi_trend(df: pd.DataFrame) -> go.Figure:
 # =========================================================
 # Always ranked across ALL countries for the selected year.
 
-def create_top10_chart(df: pd.DataFrame, year: int) -> go.Figure:
+def _create_ranking_chart(df, year, smallest: bool) -> go.Figure:
     data = _year_slice(df, year)
 
     if data.empty:
         return _empty_plotly_figure(f"No data available for {year}")
 
-    top10 = data.nlargest(10, "HDI").sort_values("HDI")
+    if smallest:
+        ranked = data.nsmallest(10, "HDI").sort_values("HDI")
+        title = f"Bottom 10 Countries by HDI ({year})"
+    else:
+        ranked = data.nlargest(10, "HDI").sort_values("HDI")
+        title = f"Top 10 Countries by HDI ({year})"
 
     fig = px.bar(
-        top10,
+        ranked,
         x="HDI",
         y="country",
         orientation="h",
-        title=f"Top 10 Countries by HDI ({year})",
+        title=title,
         labels={"HDI": "Human Development Index", "country": "Country"},
         hover_name="country",
+        color_discrete_sequence=PALETTE,
     )
 
     fig.update_traces(
-        hovertemplate="Country: %{y}<br>HDI: %{x:.3f}<extra></extra>"
+        hovertemplate="Country: %{y}<br>HDI: %{x:.3f}<extra></extra>",
+        texttemplate="%{x:.3f}",
+        textposition="outside",
+        cliponaxis=False,
     )
 
+    # Fixed 0-1 scale so bars are comparable between years.
+    fig.update_xaxes(range=[0, 1.1], dtick=0.2)
+
     return _apply_white_layout(fig)
+
+
+def create_top10_chart(df: pd.DataFrame, year: int) -> go.Figure:
+    return _create_ranking_chart(df, year, smallest=False)
 
 
 def create_bottom10_chart(df: pd.DataFrame, year: int) -> go.Figure:
-    data = _year_slice(df, year)
-
-    if data.empty:
-        return _empty_plotly_figure(f"No data available for {year}")
-
-    bottom10 = data.nsmallest(10, "HDI").sort_values("HDI")
-
-    fig = px.bar(
-        bottom10,
-        x="HDI",
-        y="country",
-        orientation="h",
-        title=f"Bottom 10 Countries by HDI ({year})",
-        labels={"HDI": "Human Development Index", "country": "Country"},
-        hover_name="country",
-    )
-
-    fig.update_traces(
-        hovertemplate="Country: %{y}<br>HDI: %{x:.3f}<extra></extra>"
-    )
-
-    return _apply_white_layout(fig)
+    return _create_ranking_chart(df, year, smallest=True)
 
 
 # =========================================================
@@ -196,22 +272,29 @@ def _create_indicator_scatter(
     if data.empty:
         return _empty_plotly_figure("No data for the selected filters")
 
+    # With only a few countries selected, print their names on the points.
+    label_points = bool(countries) and len(data) <= MAX_LABELLED_POINTS
+
     fig = px.scatter(
         data,
         x=x_column,
         y="HDI",
         hover_name="country",
+        text="country" if label_points else None,
         title=f"{title} ({year})",
         labels={x_column: x_label, "HDI": "Human Development Index"},
+        color_discrete_sequence=PALETTE,
     )
 
     fig.update_traces(
+        marker={"size": 11 if label_points else 8, "opacity": 0.85},
+        textposition="top center",
         hovertemplate=(
             "<b>%{hovertext}</b><br>"
             f"{x_label}: %{{x:{x_hover_format}}}{unit_suffix}<br>"
             "HDI: %{y:.3f}"
             "<extra></extra>"
-        )
+        ),
     )
 
     return _apply_white_layout(fig)
@@ -275,7 +358,7 @@ def create_hdi_distribution(df: pd.DataFrame, year: int) -> Figure:
     fig = Figure(figsize=(10, 6))
     ax = fig.subplots()
 
-    sns.histplot(data["HDI"], bins=15, kde=True, ax=ax)
+    sns.histplot(data["HDI"], bins=15, kde=True, color=PALETTE[0], ax=ax)
 
     ax.set_title(f"HDI Distribution ({year})")
     ax.set_xlabel("Human Development Index")
@@ -350,3 +433,14 @@ if __name__ == "__main__":
     create_hdi_distribution(df, latest_year).savefig(
         output_dir / "hdi_distribution.png", dpi=150, bbox_inches="tight"
     )
+    create_correlation_heatmap(df, latest_year).savefig(
+        output_dir / "correlation_heatmap.png", dpi=150, bbox_inches="tight"
+    )
+
+    print("\nCorrelation Matrix:")
+    print(get_correlation_matrix(df, latest_year))
+
+    print("\n======================================")
+    print("All visualizations completed!")
+    print(f"Seaborn charts saved in: {output_dir}")
+    print("======================================")
